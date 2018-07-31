@@ -1,6 +1,8 @@
 package database
 
 import (
+	"fmt"
+
 	"github.com/jmoiron/sqlx"
 )
 
@@ -15,14 +17,20 @@ func (db *DB) Init(m *sqlx.DB) {
 }
 func (db *DB) getnumbers() []string {
 	var res []string
-	db.d.Select(&res, `SELECT phone FROM contact_phones
+	err := db.d.Select(&res, `SELECT phone FROM suz_contact_phones
 	WHERE status != 'ANSWER' AND lastcall < NOW()-10000 AND count < 5
-	LIMIT 1000`)
+	LIMIT 10`)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 	return res
 }
 func (db *DB) updateNumber(phone, status string) {
-	db.d.Exec(`UPDATE contact_phones SET count=count+1,lastcall=NOW(),status=? 
+	_, err := db.d.Exec(`UPDATE suz_contact_phones SET count=count+1,lastcall=NOW(),status=? 
 	WHERE phone=?`, status, phone)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 }
 
 // Run публичный метод для запуска
@@ -35,11 +43,15 @@ func (db *DB) Run(in, out chan map[string]string) {
 				for _, ph := range phs {
 					out <- map[string]string{"phone": ph}
 				}
-				ln := string(len(phs))
-				out <- map[string]string{"count": ln}
+				if len(phs) > 0 {
+					out <- map[string]string{"end": "end"}
+				} else {
+					out <- map[string]string{"count": "0"}
+				}
 			}()
 		case "update":
 			go db.updateNumber(a["phone"], a["status"])
+			fmt.Printf("updated: %s\t\t%s\n", a["phone"], a["status"])
 		}
 	}
 }
