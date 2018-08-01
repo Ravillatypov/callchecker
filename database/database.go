@@ -27,8 +27,8 @@ func (db *DB) getnumbers() []string {
 }
 func (db *DB) getcount() uint16 {
 	var res uint16
-	err := db.d.Select(&res, `SELECT COUNT(1) AS result FROM suz_contact_phones
-	WHERE status != 'ANSWER' AND count < 5 LIMIT 1`)
+	err := db.d.QueryRowx(`SELECT COUNT(1) AS result FROM suz_contact_phones
+	WHERE status != 'ANSWER' AND count < 5 LIMIT 1`).Scan(&res)
 	if err != nil {
 		fmt.Println(err.Error())
 	}

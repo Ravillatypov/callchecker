@@ -15,10 +15,12 @@ import (
 
 func main() {
 	var host, user, pass, sqlconf string
+	var maxchan uint
 	flag.StringVar(&host, "h", "localhost", "AMI hostname or ip address")
 	flag.StringVar(&user, "u", "admin", "AMI username")
 	flag.StringVar(&pass, "p", "amp111", "AMI secret")
 	flag.StringVar(&sqlconf, "m", "root@/checker", "mysql configuration string as [username[:password]@][protocol[(address)]]/dbname")
+	flag.UintVar(&maxchan, "c", 1, "number of active calls")
 	flag.Parse()
 	conf := amigo.Settings{Host: host, Username: user, Password: pass}
 	ami := amigo.New(&conf)
@@ -41,7 +43,7 @@ func main() {
 	call2db := make(chan map[string]string, 10)
 	db2call := make(chan map[string]string, 10)
 	a := caller.Call{}
-	a.Init(ami)
+	a.Init(ami, uint8(maxchan))
 	go d.Run(call2db, db2call)
 	a.Run(db2call, call2db)
 }

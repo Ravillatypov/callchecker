@@ -12,15 +12,33 @@ import (
 
 // Call структура хранит указатель на ami и число запущенных звонков
 type Call struct {
-	queue uint8
-	m     sync.Map
-	ami   *amigo.Amigo
+	queue, maxchan uint8
+	m              sync.Map
+	ami            *amigo.Amigo
 }
 
 // Init для инициализации
-func (c *Call) Init(a *amigo.Amigo) {
+func (c *Call) Init(a *amigo.Amigo, maxcallchannels uint8) {
 	c.queue = 0
+	c.maxchan = maxcallchannels
 	c.ami = a
+}
+
+func (c *Call) caller(in chan string) {
+	for phone := range in {
+		c.runcall(phone, 1)
+		go c.skipafter(phone)
+	}
+}
+
+func (c *Call) skipafter(number string) {
+	time.Sleep(time.Second * 31)
+	if _, ok := c.m.Load(number); ok {
+		c.m.Delete(number)
+		if c.queue > 0 {
+			c.queue--
+		}
+	}
 }
 
 // Run метод для запуска
@@ -30,6 +48,10 @@ func (c *Call) Run(in, out chan map[string]string) {
 		out <- map[string]string{
 			"type": "select",
 		}
+	}
+	callerchan := make(chan string, 10)
+	for i := uint8(0); i < c.maxchan; i++ {
+		go c.caller(callerchan)
 	}
 	for a := range in {
 		if _, ok := a["end"]; ok {
@@ -46,7 +68,7 @@ func (c *Call) Run(in, out chan map[string]string) {
 			time.Sleep(time.Minute * 30)
 		}
 		if phone, ok := a["phone"]; ok {
-			go c.runcall(phone, 1)
+			callerchan <- phone
 		}
 	}
 }
@@ -54,7 +76,7 @@ func (c *Call) runcall(number string, sleep int) {
 	if sleep < 2 {
 		sleep = 2
 	}
-	if c.queue < 10 && c.ami.Connected() {
+	if c.queue < c.maxchan && c.ami.Connected() {
 		time.Sleep(time.Second * time.Duration(sleep))
 		c.ami.Action(map[string]string{
 			"Action":   "Originate",
@@ -67,14 +89,9 @@ func (c *Call) runcall(number string, sleep int) {
 			"Async":    "true",
 		})
 		c.m.Store(number, number)
+		time.Sleep(time.Second * 2)
 		c.queue++
 		fmt.Printf("queue: %d\n", c.queue)
-		time.Sleep(time.Second * 31)
-		if _, ok := c.m.Load(number); ok {
-			c.queue--
-			c.m.Delete(number)
-			fmt.Printf("queue: %d skip number %s\n", c.queue, number)
-		}
 	} else {
 		time.Sleep(time.Duration(sleep*2) * time.Second)
 		c.runcall(number, 5)
@@ -97,7 +114,9 @@ func (c *Call) getresult(out chan map[string]string) {
 					"phone":  ph,
 					"status": e["DialStatus"],
 				}
-				c.queue--
+				if c.queue > 0 {
+					c.queue--
+				}
 				fmt.Printf("queue: %d\n", c.queue)
 				c.m.Delete(ph)
 			}
@@ -113,10 +132,17 @@ func (c *Call) getresult(out chan map[string]string) {
 						"phone":  ph,
 						"status": st,
 					}
-					c.queue--
+					if c.queue > 0 {
+						c.queue--
+					}
 					fmt.Printf("queue2: %d\n", c.queue)
 					c.m.Delete(ph)
 				}
+			}
+		}
+		if e["Event"] == "OriginateResponse" && e["Response"] != "Success" {
+			if c.queue > 0 {
+				c.queue--
 			}
 		}
 	}
