@@ -19,7 +19,16 @@ func (db *DB) getnumbers() []string {
 	var res []string
 	err := db.d.Select(&res, `SELECT phone FROM suz_contact_phones
 	WHERE status != 'ANSWER' AND lastcall < NOW()-10000 AND count < 5
-	LIMIT 10`)
+	ORDER BY count LIMIT 10`)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	return res
+}
+func (db *DB) getcount() uint16 {
+	var res uint16
+	err := db.d.Select(&res, `SELECT COUNT(1) AS result FROM suz_contact_phones
+	WHERE status != 'ANSWER' AND count < 5 LIMIT 1`)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -40,6 +49,7 @@ func (db *DB) Run(in, out chan map[string]string) {
 		case "select":
 			go func() {
 				phs := db.getnumbers()
+				phonescount := db.getcount()
 				for _, ph := range phs {
 					out <- map[string]string{"phone": ph}
 				}
@@ -48,6 +58,10 @@ func (db *DB) Run(in, out chan map[string]string) {
 				} else {
 					out <- map[string]string{"count": "0"}
 				}
+				if phonescount == 0 {
+					out <- map[string]string{"stop": "stop"}
+				}
+
 			}()
 		case "update":
 			go db.updateNumber(a["phone"], a["status"])
